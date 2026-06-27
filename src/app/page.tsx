@@ -25,6 +25,7 @@ export default function WeddingGuestBook() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
+  const [grandStats, setGrandStats] = useState<{ total: number; hadir: number; totalOrang: number }>({ total: 0, hadir: 0, totalOrang: 0 });
   
   // Modal state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,23 +64,26 @@ export default function WeddingGuestBook() {
     setCustomGroup("");
   };
 
-  const fetchGuests = async (sheetName: string) => {
-    setLoading(true);
+  const fetchGuests = async (sheetName: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/guests?sheet=${encodeURIComponent(sheetName)}`);
       const data = await res.json();
       if (data.guests) {
         setGuests(data.guests);
       }
+      if (data.grandStats) {
+        setGrandStats(data.grandStats);
+      }
     } catch (error) {
       console.error("Error fetching guests:", error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchGuests(activeTab);
+    fetchGuests(activeTab, false);
   }, [activeTab]);
 
   const filteredGuests = useMemo(() => {
@@ -141,6 +145,7 @@ export default function WeddingGuestBook() {
         setCheckinSuccess(`${selectedGuest.name} berhasil check-in!`);
         setTimeout(() => setCheckinSuccess(null), 3000);
         setSelectedGuest(null);
+        fetchGuests(activeTab, true); // Refresh list and grandStats silently
       } else {
         const data = await res.json();
         setCheckinError(data.error || 'Gagal melakukan check-in. Coba lagi.');
@@ -173,6 +178,7 @@ export default function WeddingGuestBook() {
         setCheckinSuccess(`Check-in ${selectedGuest.name} berhasil dibatalkan.`);
         setTimeout(() => setCheckinSuccess(null), 3000);
         setSelectedGuest(null);
+        fetchGuests(activeTab, true); // Refresh list and grandStats silently
       } else {
         const data = await res.json();
         setCheckinError(data.error || 'Gagal membatalkan check-in. Coba lagi.');
@@ -203,6 +209,7 @@ export default function WeddingGuestBook() {
         setCheckinSuccess(`Tamu ${selectedGuest.name} berhasil dihapus.`);
         setTimeout(() => setCheckinSuccess(null), 3000);
         setSelectedGuest(null);
+        fetchGuests(activeTab, true); // Refresh list and grandStats silently
       } else {
         const data = await res.json();
         setCheckinError(data.error || 'Gagal menghapus tamu. Coba lagi.');
@@ -246,6 +253,7 @@ export default function WeddingGuestBook() {
           setTimeout(() => setCheckinSuccess(null), 3000);
           setIsAddingGuest(false);
           setSearchQuery(""); // Clear search so they can see the guest
+          fetchGuests(activeTab, true); // Refresh list and grandStats silently
         }
       } else {
         const data = await res.json();
@@ -295,33 +303,81 @@ export default function WeddingGuestBook() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-1 md:grid-cols-3 gap-4"
+        className="space-y-6"
       >
-        <div className="glass-card p-6 flex items-center space-x-4">
-          <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
-            <Users size={28} />
-          </div>
-          <div>
-            <p className="text-sm text-slate-600 font-medium">Total Undangan</p>
-            <h3 className="text-3xl font-bold text-slate-800">{stats.total}</h3>
+        {/* Grand Combined Stats */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-[#b8993e] tracking-wider uppercase px-1">
+            Statistik Gabungan (Keseluruhan)
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="glass-card p-6 flex items-center space-x-4 border-amber-100/50">
+              <div className="p-3 bg-amber-500/20 rounded-xl text-[#b8993e]">
+                <Users size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Total Undangan Gabungan</p>
+                <h3 className="text-3xl font-bold text-slate-800">{grandStats.total}</h3>
+              </div>
+            </div>
+
+            <div className="glass-card p-6 flex items-center space-x-4 border-amber-100/50">
+              <div className="p-3 bg-amber-500/20 rounded-xl text-[#b8993e]">
+                <CheckCircle2 size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Tamu Hadir Gabungan</p>
+                <h3 className="text-3xl font-bold text-slate-800">{grandStats.hadir}</h3>
+              </div>
+            </div>
+
+            <div className="glass-card p-6 flex items-center space-x-4 border-amber-100/50">
+              <div className="p-3 bg-amber-500/20 rounded-xl text-[#b8993e]">
+                <UserCheck size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Total Kehadiran Gabungan</p>
+                <h3 className="text-3xl font-bold text-slate-800">{grandStats.totalOrang}</h3>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="glass-card p-6 flex items-center space-x-4">
-          <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
-            <CheckCircle2 size={28} />
-          </div>
-          <div>
-            <p className="text-sm text-slate-600 font-medium">Tamu Hadir (Grup)</p>
-            <h3 className="text-3xl font-bold text-slate-800">{stats.hadir}</h3>
-          </div>
-        </div>
-        <div className="glass-card p-6 flex items-center space-x-4">
-          <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
-            <UserCheck size={28} />
-          </div>
-          <div>
-            <p className="text-sm text-slate-600 font-medium">Total Kehadiran (Orang)</p>
-            <h3 className="text-3xl font-bold text-slate-800">{stats.totalOrang}</h3>
+
+        {/* Active Tab Stats */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-emerald-800 tracking-wider uppercase px-1">
+            Statistik {activeTab === "Tamu Rahma (Perempuan)" ? "Keluarga Perempuan (Rahma)" : "Keluarga Laki-Laki (Angga)"}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="glass-card p-6 flex items-center space-x-4">
+              <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
+                <Users size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Total Undangan</p>
+                <h3 className="text-3xl font-bold text-slate-800">{stats.total}</h3>
+              </div>
+            </div>
+
+            <div className="glass-card p-6 flex items-center space-x-4">
+              <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
+                <CheckCircle2 size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Tamu Hadir (Grup)</p>
+                <h3 className="text-3xl font-bold text-slate-800">{stats.hadir}</h3>
+              </div>
+            </div>
+
+            <div className="glass-card p-6 flex items-center space-x-4">
+              <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-700">
+                <UserCheck size={28} />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600 font-medium">Total Kehadiran (Orang)</p>
+                <h3 className="text-3xl font-bold text-slate-800">{stats.totalOrang}</h3>
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>

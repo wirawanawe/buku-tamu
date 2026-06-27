@@ -136,3 +136,15 @@ export async function deleteGuestFromDb(sheetName: string, guestRow: number): Pr
     [sheetName, guestRow]
   );
 }
+
+export async function getGrandStats(): Promise<{ total: number; hadir: number; totalOrang: number }> {
+  const db = getPool();
+  const [rows] = await db.execute(
+    'SELECT COUNT(*) as total, SUM(checklist) as hadir, SUM(jumlah_kehadiran) as totalOrang FROM guests'
+  ) as any;
+  return {
+    total: rows[0]?.total || 0,
+    hadir: parseInt(rows[0]?.hadir, 10) || 0,
+    totalOrang: parseInt(rows[0]?.totalOrang, 10) || 0,
+  };
+}

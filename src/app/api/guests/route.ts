@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGuestsFromDb, checkinGuest, resetGuest, createGuest, deleteGuestFromDb } from '@/lib/db';
+import { getGuestsFromDb, checkinGuest, resetGuest, createGuest, deleteGuestFromDb, getGrandStats } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -17,13 +17,17 @@ export async function GET(request: Request) {
     const totalHadirChecklist = guests.filter(g => g.checklist).length;
     const totalHadirOrang = guests.reduce((sum, g) => sum + g.jumlahKehadiran, 0);
 
+    // Get grand stats (combined totals across all sheets)
+    const grandStats = await getGrandStats();
+
     return NextResponse.json({
       guests,
       stats: {
         totalDiundang,
         totalHadirChecklist,
         totalHadirOrang,
-      }
+      },
+      grandStats
     });
   } catch (error: any) {
     console.error("API GET Error:", error);
