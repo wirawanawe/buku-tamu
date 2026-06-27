@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Search, CheckCircle2, Users, UserCheck, Gift, Loader2, Sparkles, AlertCircle, ChevronDown, X } from "lucide-react";
+import { Search, CheckCircle2, Users, UserCheck, Gift, Loader2, Sparkles, AlertCircle, ChevronDown, X, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,35 @@ export default function WeddingGuestBook() {
   const [souvenirB, setSouvenirB] = useState(0);
   const [checkinError, setCheckinError] = useState<string | null>(null);
   const [checkinSuccess, setCheckinSuccess] = useState<string | null>(null);
+
+  // Add Guest state
+  const [isAddingGuest, setIsAddingGuest] = useState(false);
+  const [newGuestName, setNewGuestName] = useState("");
+  const [newGuestGroup, setNewGuestGroup] = useState("");
+  const [customGroup, setCustomGroup] = useState("");
+
+  const existingGroups = useMemo(() => {
+    const groups = new Set<string>();
+    guests.forEach(g => {
+      if (g.keterangan) groups.add(g.keterangan);
+    });
+    // Default group options
+    if (groups.size === 0) {
+      groups.add("Keluarga");
+      groups.add("Lainnya");
+    }
+    return Array.from(groups);
+  }, [guests]);
+
+  const openAddGuestModal = () => {
+    setIsAddingGuest(true);
+    setNewGuestName(searchQuery);
+    setKehadiran(1);
+    setSouvenirA(0);
+    setSouvenirB(0);
+    setNewGuestGroup(existingGroups[0] || "Lainnya");
+    setCustomGroup("");
+  };
 
   const fetchGuests = async (sheetName: string) => {
     setLoading(true);
@@ -155,6 +184,80 @@ export default function WeddingGuestBook() {
       setIsSubmitting(false);
     }
   };
+  const handleDeleteGuest = async () => {
+    if (!selectedGuest) return;
+    
+    const confirmDelete = window.confirm(`Apakah Anda yakin ingin menghapus tamu "${selectedGuest.name}" secara permanen dari database?`);
+    if (!confirmDelete) return;
+
+    setIsSubmitting(true);
+    setCheckinError(null);
+    try {
+      const res = await fetch(`/api/guests?sheetName=${encodeURIComponent(activeTab)}&rowNumber=${selectedGuest.rowNumber}&action=delete`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        // Remove guest from list
+        setGuests(prev => prev.filter(g => g.rowNumber !== selectedGuest.rowNumber));
+        setCheckinSuccess(`Tamu ${selectedGuest.name} berhasil dihapus.`);
+        setTimeout(() => setCheckinSuccess(null), 3000);
+        setSelectedGuest(null);
+      } else {
+        const data = await res.json();
+        setCheckinError(data.error || 'Gagal menghapus tamu. Coba lagi.');
+      }
+    } catch (error) {
+      console.error("Error deleting guest:", error);
+      setCheckinError('Koneksi gagal. Silakan coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  const handleAddGuest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGuestName.trim()) return;
+
+    setIsSubmitting(true);
+    setCheckinError(null);
+    try {
+      const selectedGroup = newGuestGroup === "__new__" ? customGroup : newGuestGroup;
+      
+      const res = await fetch('/api/guests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          sheetName: activeTab,
+          name: newGuestName.trim(),
+          keterangan: selectedGroup.trim() || 'Lainnya',
+          jumlahKehadiran: kehadiran,
+          souvenirA,
+          souvenirB
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.guest) {
+          // Add the newly created guest to the list
+          setGuests(prev => [data.guest, ...prev]);
+          setCheckinSuccess(`${newGuestName} berhasil ditambahkan dan check-in!`);
+          setTimeout(() => setCheckinSuccess(null), 3000);
+          setIsAddingGuest(false);
+          setSearchQuery(""); // Clear search so they can see the guest
+        }
+      } else {
+        const data = await res.json();
+        setCheckinError(data.error || 'Gagal menambahkan tamu. Coba lagi.');
+      }
+    } catch (error) {
+      console.error("Error adding guest:", error);
+      setCheckinError('Koneksi gagal. Silakan coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const openModal = (guest: Guest) => {
     setSelectedGuest(guest);
@@ -256,26 +359,36 @@ export default function WeddingGuestBook() {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input
-              type="text"
-              placeholder="Cari nama tamu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-12 py-3 bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-xl transition-all text-slate-800 placeholder:text-slate-400"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Hapus pencarian"
-              >
-                <X size={20} />
-              </button>
-            )}
+          {/* Search & Add */}
+          <div className="flex space-x-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input
+                type="text"
+                placeholder="Cari nama tamu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-12 py-3 bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-xl transition-all text-slate-800 placeholder:text-slate-400"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  aria-label="Hapus pencarian"
+                >
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={openAddGuestModal}
+              className="px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl flex items-center justify-center space-x-1 shadow-md shadow-emerald-500/25 transition-all active:scale-95 shrink-0"
+            >
+              <Plus size={20} />
+              <span className="hidden sm:inline">Tambah Tamu</span>
+            </button>
           </div>
 
           {/* List */}
@@ -285,9 +398,17 @@ export default function WeddingGuestBook() {
                 <Loader2 className="animate-spin" size={32} />
               </div>
             ) : filteredGuests.length === 0 ? (
-              <div className="h-40 flex flex-col items-center justify-center text-slate-500 space-y-2">
+              <div className="h-40 flex flex-col items-center justify-center text-slate-500 space-y-3">
                 <AlertCircle size={32} />
                 <p>Tidak ada tamu yang ditemukan.</p>
+                <button
+                  type="button"
+                  onClick={openAddGuestModal}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-semibold shadow hover:scale-[1.02] transition-all flex items-center space-x-1 text-sm active:scale-95"
+                >
+                  <Plus size={16} />
+                  <span>Tambah Tamu "{searchQuery}"</span>
+                </button>
               </div>
             ) : (
               <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar space-y-4">
@@ -470,18 +591,177 @@ export default function WeddingGuestBook() {
                   </button>
                 </div>
 
-                {selectedGuest.checklist && (
-                  <div className="pt-2 border-t border-slate-100">
+                <div className="pt-2 border-t border-slate-100 flex flex-col space-y-2">
+                  {selectedGuest.checklist && (
                     <button
                       type="button"
                       onClick={handleResetCheckin}
                       disabled={isSubmitting}
-                      className="w-full py-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-semibold transition-all active:scale-95 flex items-center justify-center"
+                      className="w-full py-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-semibold transition-all active:scale-95 flex items-center justify-center text-sm"
                     >
                       Batal Check-in / Reset Tamu
                     </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleDeleteGuest}
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold transition-all active:scale-95 flex items-center justify-center text-sm"
+                  >
+                    Hapus Tamu Undangan
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Guest Modal */}
+      <AnimatePresence>
+        {isAddingGuest && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+              onClick={() => !isSubmitting && setIsAddingGuest(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white p-6 rounded-2xl shadow-2xl border border-emerald-100"
+            >
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-emerald-600 p-3 rounded-full shadow-lg shadow-emerald-500/50 text-white">
+                <Plus size={24} />
+              </div>
+
+              <div className="mt-4 text-center space-y-1">
+                <h3 className="text-2xl font-bold text-slate-800">Tambah Tamu Baru</h3>
+                <p className="text-slate-500">Input tamu yang belum terdaftar</p>
+              </div>
+
+              <form onSubmit={handleAddGuest} className="mt-6 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Nama Tamu</label>
+                  <input
+                    type="text"
+                    required
+                    value={newGuestName}
+                    onChange={(e) => setNewGuestName(e.target.value)}
+                    placeholder="Tulis nama tamu..."
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-xl text-slate-800"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Kelompok / Keluarga</label>
+                  <select
+                    value={newGuestGroup}
+                    onChange={(e) => setNewGuestGroup(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-xl text-slate-800"
+                  >
+                    {existingGroups.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                    <option value="__new__">+ Kelompok Baru (Tulis Sendiri)</option>
+                  </select>
+                </div>
+
+                {newGuestGroup === "__new__" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Nama Kelompok Baru</label>
+                    <input
+                      type="text"
+                      required
+                      value={customGroup}
+                      onChange={(e) => setCustomGroup(e.target.value)}
+                      placeholder="Misal: Keluarga Jakarta..."
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-xl text-slate-800"
+                    />
                   </div>
                 )}
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700 flex items-center">
+                    <Users size={16} className="mr-2 text-emerald-600"/>
+                    Jumlah Kehadiran (Orang)
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <button type="button" onClick={() => setKehadiran(Math.max(1, kehadiran - 1))} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl font-bold hover:bg-slate-200 text-slate-800">-</button>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={kehadiran} 
+                      onChange={(e) => setKehadiran(parseInt(e.target.value) || 1)}
+                      className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-center text-lg font-bold text-slate-800"
+                    />
+                    <button type="button" onClick={() => setKehadiran(kehadiran + 1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl font-bold hover:bg-slate-200 text-slate-800">+</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700 flex items-center">
+                      <Gift size={16} className="mr-2 text-emerald-600"/>
+                      Souvenir A
+                    </label>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={souvenirA} 
+                      onChange={(e) => setSouvenirA(parseInt(e.target.value) || 0)}
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700 flex items-center">
+                      <Gift size={16} className="mr-2 text-emerald-600"/>
+                      Souvenir B
+                    </label>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      value={souvenirB} 
+                      onChange={(e) => setSouvenirB(parseInt(e.target.value) || 0)}
+                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {checkinError && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start space-x-2">
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    <span>{checkinError}</span>
+                  </div>
+                )}
+
+                <div className="pt-4 flex space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => { setIsAddingGuest(false); setCheckinError(null); }}
+                    disabled={isSubmitting}
+                    className="flex-1 py-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center justify-center shadow-lg shadow-emerald-500/30 transition-all active:scale-95"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="animate-spin" size={20} />
+                    ) : (
+                      <>
+                        <CheckCircle2 size={20} className="mr-2" />
+                        Simpan & Hadir
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </motion.div>
           </div>

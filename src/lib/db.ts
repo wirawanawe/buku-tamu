@@ -17,57 +17,122 @@ export function getPool() {
   return pool;
 }
 
-export interface CheckinRecord {
-  sheet_name: string;
-  guest_row: number;
-  guest_name: string;
-  jumlah_kehadiran: number;
-  souvenir_a: number;
-  souvenir_b: number;
-  checked_in: boolean;
+export interface Guest {
+  rowNumber: number;
+  no: string;
+  name: string;
+  undangan: string;
+  checklist: boolean;
+  jumlahKehadiran: number;
+  kuponSouvenir: string;
+  keterangan: string;
+  konfirmasiHadir: string;
+  souvenirA: number;
+  souvenirB: number;
 }
 
-export async function getCheckins(sheetName: string): Promise<CheckinRecord[]> {
+export async function getGuestsFromDb(sheetName: string): Promise<Guest[]> {
   const db = getPool();
   const [rows] = await db.execute(
-    'SELECT * FROM checkins WHERE sheet_name = ?',
+    'SELECT * FROM guests WHERE sheet_name = ? ORDER BY guest_row ASC',
     [sheetName]
   );
-  return rows as CheckinRecord[];
+  
+  if (!Array.isArray(rows)) return [];
+  
+  return rows.map((r: any) => ({
+    rowNumber: r.guest_row,
+    no: r.no || '',
+    name: r.name || '',
+    undangan: r.undangan || '',
+    checklist: r.checklist === 1 || r.checklist === true,
+    jumlahKehadiran: r.jumlah_kehadiran || 0,
+    kuponSouvenir: r.kupon_souvenir || '',
+    keterangan: r.keterangan || 'Lainnya',
+    konfirmasiHadir: r.konfirmasi_hadir || '',
+    souvenirA: r.souvenir_a || 0,
+    souvenirB: r.souvenir_b || 0,
+  }));
 }
 
-export async function upsertCheckin(
+export async function checkinGuest(
   sheetName: string,
   guestRow: number,
-  guestName: string,
   jumlahKehadiran: number,
   souvenirA: number,
   souvenirB: number
 ): Promise<void> {
   const db = getPool();
   await db.execute(
-    `INSERT INTO checkins (sheet_name, guest_row, guest_name, jumlah_kehadiran, souvenir_a, souvenir_b, checked_in)
-     VALUES (?, ?, ?, ?, ?, ?, TRUE)
-     ON DUPLICATE KEY UPDATE
-       guest_name = VALUES(guest_name),
-       jumlah_kehadiran = VALUES(jumlah_kehadiran),
-       souvenir_a = VALUES(souvenir_a),
-       souvenir_b = VALUES(souvenir_b),
-       checked_in = TRUE`,
-    [sheetName, guestRow, guestName, jumlahKehadiran, souvenirA, souvenirB]
+    `UPDATE guests 
+     SET checklist = TRUE, 
+         jumlah_kehadiran = ?, 
+         souvenir_a = ?, 
+         souvenir_b = ? 
+     WHERE sheet_name = ? AND guest_row = ?`,
+    [jumlahKehadiran, souvenirA, souvenirB, sheetName, guestRow]
   );
 }
 
-export async function resetCheckin(sheetName: string, guestRow: number): Promise<void> {
+export async function resetGuest(
+  sheetName: string,
+  guestRow: number
+): Promise<void> {
   const db = getPool();
   await db.execute(
-    `INSERT INTO checkins (sheet_name, guest_row, guest_name, jumlah_kehadiran, souvenir_a, souvenir_b, checked_in)
-     VALUES (?, ?, '', 0, 0, 0, FALSE)
-     ON DUPLICATE KEY UPDATE
-       jumlah_kehadiran = 0,
-       souvenir_a = 0,
-       souvenir_b = 0,
-       checked_in = FALSE`,
+    `UPDATE guests 
+     SET checklist = FALSE, 
+         jumlah_kehadiran = 0, 
+         souvenir_a = 0, 
+         souvenir_b = 0 
+     WHERE sheet_name = ? AND guest_row = ?`,
+    [sheetName, guestRow]
+  );
+}
+
+export async function createGuest(
+  sheetName: string,
+  name: string,
+  keterangan: string,
+  jumlahKehadiran: number,
+  souvenirA: number,
+  souvenirB: number
+): Promise<Guest> {
+  const db = getPool();
+  
+  // Get next guest_row
+  const [rows] = await db.execute(
+    'SELECT COALESCE(MAX(guest_row), 0) + 1 AS nextRow FROM guests WHERE sheet_name = ?',
+    [sheetName]
+  ) as any;
+  const nextRow = rows[0]?.nextRow || 1;
+
+  // Insert new guest
+  await db.execute(
+    `INSERT INTO guests (sheet_name, guest_row, no, name, undangan, checklist, jumlah_kehadiran, kupon_souvenir, keterangan, konfirmasi_hadir, souvenir_a, souvenir_b)
+     VALUES (?, ?, '', ?, 'Undangan', TRUE, ?, 'A', ?, 'Hadir', ?, ?)`,
+    [sheetName, nextRow, name, jumlahKehadiran, keterangan || 'Lainnya', souvenirA, souvenirB]
+  );
+
+  return {
+    rowNumber: nextRow,
+    no: '',
+    name,
+    undangan: 'Undangan',
+    checklist: true,
+    jumlahKehadiran,
+    kuponSouvenir: 'A',
+    keterangan: keterangan || 'Lainnya',
+    konfirmasiHadir: 'Hadir',
+    souvenirA,
+    souvenirB
+  };
+}
+
+export async function deleteGuestFromDb(sheetName: string, guestRow: number): Promise<void> {
+  const db = getPool();
+  await db.execute(
+    'DELETE FROM guests WHERE sheet_name = ? AND guest_row = ?',
     [sheetName, guestRow]
   );
 }

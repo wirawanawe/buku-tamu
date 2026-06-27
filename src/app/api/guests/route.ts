@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGuests } from '@/lib/googleSheets';
-import { getCheckins, upsertCheckin, resetCheckin } from '@/lib/db';
+import { getGuestsFromDb, checkinGuest, resetGuest, createGuest, deleteGuestFromDb } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -11,35 +10,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Sheet name is required' }, { status: 400 });
     }
 
-    // Get guest list from Google Sheets
-    const guests = await getGuests(sheetName);
+    // Get guest list from MySQL database directly
+    const guests = await getGuestsFromDb(sheetName);
 
-    // Get check-in data from MySQL
-    const checkins = await getCheckins(sheetName);
-    const checkinMap = new Map(checkins.map(c => [c.guest_row, c]));
-
-    // Merge: override checklist data with MySQL data
-    const mergedGuests = guests.map(guest => {
-      const checkin = checkinMap.get(guest.rowNumber);
-      if (checkin) {
-        // If a checkin record exists in the DB, it is the source of truth (can be true or false)
-        return {
-          ...guest,
-          checklist: Boolean(checkin.checked_in),
-          jumlahKehadiran: checkin.jumlah_kehadiran,
-          souvenirA: checkin.souvenir_a,
-          souvenirB: checkin.souvenir_b,
-        };
-      }
-      return guest;
-    });
-
-    const totalDiundang = mergedGuests.length;
-    const totalHadirChecklist = mergedGuests.filter(g => g.checklist).length;
-    const totalHadirOrang = mergedGuests.reduce((sum, g) => sum + g.jumlahKehadiran, 0);
+    const totalDiundang = guests.length;
+    const totalHadirChecklist = guests.filter(g => g.checklist).length;
+    const totalHadirOrang = guests.reduce((sum, g) => sum + g.jumlahKehadiran, 0);
 
     return NextResponse.json({
-      guests: mergedGuests,
+      guests,
       stats: {
         totalDiundang,
         totalHadirChecklist,
@@ -55,22 +34,40 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { sheetName, rowNumber, guestName, jumlahKehadiran, souvenirA, souvenirB } = body;
+    const { action, sheetName, rowNumber, name, keterangan, jumlahKehadiran, souvenirA, souvenirB } = body;
 
-    if (!sheetName || !rowNumber) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!sheetName) {
+      return NextResponse.json({ error: 'Missing sheet name' }, { status: 400 });
     }
 
-    await upsertCheckin(
-      sheetName,
-      rowNumber,
-      guestName || '',
-      jumlahKehadiran || 0,
-      souvenirA || 0,
-      souvenirB || 0
-    );
+    if (action === 'create') {
+      if (!name) {
+        return NextResponse.json({ error: 'Nama tamu wajib diisi' }, { status: 400 });
+      }
+      const newGuest = await createGuest(
+        sheetName,
+        name,
+        keterangan || 'Lainnya',
+        jumlahKehadiran || 0,
+        souvenirA || 0,
+        souvenirB || 0
+      );
+      return NextResponse.json({ success: true, guest: newGuest });
+    } else {
+      if (!rowNumber) {
+        return NextResponse.json({ error: 'Missing row number' }, { status: 400 });
+      }
 
-    return NextResponse.json({ success: true });
+      await checkinGuest(
+        sheetName,
+        rowNumber,
+        jumlahKehadiran || 0,
+        souvenirA || 0,
+        souvenirB || 0
+      );
+
+      return NextResponse.json({ success: true });
+    }
   } catch (error: any) {
     console.error("API POST Error:", error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
@@ -82,12 +79,17 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const sheetName = searchParams.get('sheetName');
     const rowNumber = parseInt(searchParams.get('rowNumber') || '', 10);
+    const action = searchParams.get('action');
 
     if (!sheetName || isNaN(rowNumber)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    await resetCheckin(sheetName, rowNumber);
+    if (action === 'delete') {
+      await deleteGuestFromDb(sheetName, rowNumber);
+    } else {
+      await resetGuest(sheetName, rowNumber);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
