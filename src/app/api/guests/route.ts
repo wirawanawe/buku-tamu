@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         // If a checkin record exists in the DB, it is the source of truth (can be true or false)
         return {
           ...guest,
-          checklist: checkin.checked_in === 1 || checkin.checked_in === true,
+          checklist: Boolean(checkin.checked_in),
           jumlahKehadiran: checkin.jumlah_kehadiran,
           souvenirA: checkin.souvenir_a,
           souvenirB: checkin.souvenir_b,
